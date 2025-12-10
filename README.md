@@ -26,10 +26,16 @@ Supported patterns
 - \w - word characters
 - [abc] - positive character groups
 - [^abc] - negative character groups
+- ^ - start of string anchor
 
 ## Examples
 
 Match single digit
 ```shell
 echo -n 'text9' | ./target/debug/rgrep -E '\d'
+```
+
+Match 2 digits followed by word character, string literal and a character group
+```shell
+echo -n '¼more78_asone' | ./target/debug/rgrep -E '\d\d\was[done]'
 ```
