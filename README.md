@@ -28,7 +28,7 @@ Supported patterns
 - [^abc] - negative character groups
 - ^ - start of string anchor
 - $ - end of string anchor
-- + - one or more times 
+- \+ - one or more times 
 
 ## Examples
 
