@@ -30,7 +30,9 @@ fn match_re(input_line: &str, pattern: &str) -> bool {
 }
 
 fn match_block(input_line: &str, pattern: &str, skip: usize) -> bool {
-    if pattern.chars().count() > 0 {
+    if pattern == "$" {
+        input_line.chars().skip(skip).count() == 0
+    } else if pattern.chars().count() > 0 {
         let p = extract_pattern(pattern);
         match input_line.chars().skip(skip).next() {
             Some(c) => match_pattern(c.to_string().as_str(), p) && match_block(&input_line, &pattern[p.len()..], skip+1),
@@ -150,9 +152,12 @@ mod tests {
     }
 
     #[test]
-    fn match_start_anchor() {
+    fn match_anchors() {
         assert_eq!(match_re("rust", "^r[tu]"), true);
         assert_eq!(match_re("rust", "^trust"), false);
+        assert_eq!(match_re("rust", "ust$"), true);
+        assert_eq!(match_re("rust", "^rust$"), true);
+        assert_eq!(match_re("rust", "us$"), false);
     }
 
     #[test]
