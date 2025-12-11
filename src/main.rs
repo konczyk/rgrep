@@ -218,4 +218,15 @@ mod tests {
         assert_eq!(match_re("bag", "ba+ag"), false);
     }
 
+    #[test]
+    fn match_zero_or_one() {
+        assert_eq!(match_re("act", "ca?t"), true);
+        assert_eq!(match_re("dog", "dogs?"), true);
+        assert_eq!(match_re("dogs", "dogs?"), true);
+        assert_eq!(match_re("", "\\d?"), true);
+        assert_eq!(match_re("5", "\\d?"), true);
+        assert_eq!(match_re("dogs", "do?gs"), true);
+        assert_eq!(match_re("dog", "dog?s"), false);
+    }
+
 }
