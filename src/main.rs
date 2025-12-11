@@ -81,7 +81,9 @@ fn match_block(input_line: &str, pattern: &str, skip: usize) -> bool {
 }
 
 fn match_pattern(input_line: &str, pattern: &str) -> bool {
-    if pattern.chars().count() == 1 {
+    if pattern == "." {
+        true
+    } else if pattern.chars().count() == 1 {
         input_line.contains(pattern)
     } else if pattern == "\\d" {
         input_line.chars().any(|x| x.is_ascii_digit())
@@ -227,6 +229,15 @@ mod tests {
         assert_eq!(match_re("5", "\\d?"), true);
         assert_eq!(match_re("dogs", "do?gs"), true);
         assert_eq!(match_re("dog", "dog?s"), false);
+    }
+
+    #[test]
+    fn match_wildcard() {
+        assert_eq!(match_re("a", "."), true);
+        assert_eq!(match_re("", ".?"), true);
+        assert_eq!(match_re("cat", "c.t"), true);
+        assert_eq!(match_re("rust", "ru.?[abt]"), true);
+        assert_eq!(match_re("rust", "rus.?t"), false);
     }
 
 }
