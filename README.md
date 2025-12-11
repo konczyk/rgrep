@@ -29,6 +29,7 @@ Supported patterns
 - ^ - start of string anchor
 - $ - end of string anchor
 - \+ - one or more times 
+- \? - zero or one times
 
 ## Examples
 

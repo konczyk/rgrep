@@ -25,36 +25,54 @@ fn match_re(input_line: &str, pattern: &str) -> bool {
                 return true
             }
         }
-        false
+        input_line.is_empty() && pattern.ends_with('?')
     }
 }
 
-fn match_repeat(input_line: &str, pattern: &str, pattern_ahead: &str, input_skip: usize, pattern_skip: usize) -> (usize, usize) {
+fn match_repeats(input_line: &str, pattern: &str, pattern_ahead: &str, input_skip: usize, pattern_skip: usize) -> (usize, usize) {
     let p_ahead = extract_pattern(&pattern_ahead[pattern_skip..]);
     match input_line.chars().skip(input_skip).next() {
         Some(c) if !p_ahead.is_empty() && match_pattern(c.to_string().as_str(), pattern) && !match_pattern(c.to_string().as_str(), p_ahead) =>
-            match_repeat(input_line, pattern, pattern_ahead, input_skip+1, pattern_skip),
+            match_repeats(input_line, pattern, pattern_ahead, input_skip + 1, pattern_skip),
         Some(c) if !p_ahead.is_empty() && match_pattern(c.to_string().as_str(), pattern) && match_pattern(c.to_string().as_str(), p_ahead) =>
-            match_repeat(input_line, pattern, pattern_ahead, input_skip+1, pattern_skip + p_ahead.len()),
+            match_repeats(input_line, pattern, pattern_ahead, input_skip + 1, pattern_skip + p_ahead.len()),
         _ =>
             (input_skip, pattern_skip + 1)
     }
 }
 
-fn match_block(input_line: &str, pattern: &str, skip_input: usize) -> bool {
+fn match_one_or_none(input_line: &str, pattern: &str, input_skip: usize, pattern_skip: usize) -> (usize, usize) {
+    match input_line.chars().skip(input_skip).next() {
+        Some(c) if match_pattern(c.to_string().as_str(), pattern) =>
+            (input_skip + 1, pattern_skip + pattern.len() + 1),
+        Some(c) if !match_pattern(c.to_string().as_str(), pattern) =>
+            (input_skip, pattern_skip + pattern_skip + pattern.len() + 1),
+        _ =>
+            (input_skip, pattern_skip)
+    }
+}
+
+fn match_block(input_line: &str, pattern: &str, skip: usize) -> bool {
     if pattern == "$" {
-        input_line.chars().skip(skip_input).count() == 0
+        input_line.chars().skip(skip).count() == 0
     } else if pattern.chars().count() > 0 {
         let single_pattern = extract_pattern(pattern);
         let quantifier = pattern.chars().skip(single_pattern.chars().count()).next();
-        match input_line.chars().skip(skip_input).next() {
+        match input_line.chars().skip(skip).next() {
             Some(c) if quantifier == Some('+') => {
-                let (input_skip, pattern_skip) = match_repeat(&input_line, single_pattern, &pattern[single_pattern.len()+1..], skip_input +1, 0);
-                match_pattern(c.to_string().as_str(), single_pattern) && match_block(&input_line, &pattern[single_pattern.len()+pattern_skip..], input_skip)
+                let (input_skip, pattern_skip) = match_repeats(&input_line, single_pattern, &pattern[single_pattern.len() + 1..], skip + 1, 0);
+                match_pattern(c.to_string().as_str(), single_pattern) && match_block(&input_line, &pattern[single_pattern.len() + pattern_skip..], input_skip)
+            },
+            Some(_) if quantifier == Some('?') => {
+                let (input_skip, pattern_skip) = match_one_or_none(&input_line, single_pattern, skip, 0);
+                match_block(&input_line, &pattern[pattern_skip..], input_skip)
+            },
+            None if quantifier == Some('?') => {
+                match_block(&input_line, &pattern[single_pattern.len() + 1..], 0)
             },
             Some(c) =>
                 match_pattern(c.to_string().as_str(), single_pattern)
-                    && match_block(&input_line, &pattern[single_pattern.len()..], skip_input +1),
+                    && match_block(&input_line, &pattern[single_pattern.len()..], skip + 1),
             None => false
         }
     } else {
