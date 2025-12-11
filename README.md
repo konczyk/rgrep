@@ -28,6 +28,7 @@ Supported patterns
 - [^abc] - negative character groups
 - ^ - start of string anchor
 - $ - end of string anchor
+- + - one or more times 
 
 ## Examples
 
@@ -44,4 +45,9 @@ echo -n '¼more78_asone' | ./target/debug/rgrep -E '\d\d\was[done]'
 Match exact word
 ```shell
 echo -n 'rust' | ./target/debug/rgrep -E '^rust$'
+```
+
+Match one or more times 
+```shell
+echo -n 'ruuust' | ./target/debug/rgrep -E '^ru+ust$'
 ```

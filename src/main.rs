@@ -29,13 +29,32 @@ fn match_re(input_line: &str, pattern: &str) -> bool {
     }
 }
 
-fn match_block(input_line: &str, pattern: &str, skip: usize) -> bool {
+fn match_repeat(input_line: &str, pattern: &str, pattern_ahead: &str, input_skip: usize, pattern_skip: usize) -> (usize, usize) {
+    let p_ahead = extract_pattern(&pattern_ahead[pattern_skip..]);
+    match input_line.chars().skip(input_skip).next() {
+        Some(c) if !p_ahead.is_empty() && match_pattern(c.to_string().as_str(), pattern) && !match_pattern(c.to_string().as_str(), p_ahead) =>
+            match_repeat(input_line, pattern, pattern_ahead, input_skip+1, pattern_skip),
+        Some(c) if !p_ahead.is_empty() && match_pattern(c.to_string().as_str(), pattern) && match_pattern(c.to_string().as_str(), p_ahead) =>
+            match_repeat(input_line, pattern, pattern_ahead, input_skip+1, pattern_skip + p_ahead.len()),
+        _ =>
+            (input_skip, pattern_skip + 1)
+    }
+}
+
+fn match_block(input_line: &str, pattern: &str, skip_input: usize) -> bool {
     if pattern == "$" {
-        input_line.chars().skip(skip).count() == 0
+        input_line.chars().skip(skip_input).count() == 0
     } else if pattern.chars().count() > 0 {
-        let p = extract_pattern(pattern);
-        match input_line.chars().skip(skip).next() {
-            Some(c) => match_pattern(c.to_string().as_str(), p) && match_block(&input_line, &pattern[p.len()..], skip+1),
+        let single_pattern = extract_pattern(pattern);
+        let quantifier = pattern.chars().skip(single_pattern.chars().count()).next();
+        match input_line.chars().skip(skip_input).next() {
+            Some(c) if quantifier == Some('+') => {
+                let (input_skip, pattern_skip) = match_repeat(&input_line, single_pattern, &pattern[single_pattern.len()+1..], skip_input +1, 0);
+                match_pattern(c.to_string().as_str(), single_pattern) && match_block(&input_line, &pattern[single_pattern.len()+pattern_skip..], input_skip)
+            },
+            Some(c) =>
+                match_pattern(c.to_string().as_str(), single_pattern)
+                    && match_block(&input_line, &pattern[single_pattern.len()..], skip_input +1),
             None => false
         }
     } else {
@@ -165,6 +184,20 @@ mod tests {
         assert_eq!(match_re("latest rust edition is 2024, it rocks", "editio\\w [big][show] \\d\\d\\d\\d[^op]"), true);
         assert_eq!(match_re("latest rust edition is 2024, it rocks", "editio\\w [big][show] \\d\\d\\d\\d[^op]"), true);
         assert_eq!(match_re("¾®_ediœ1", "\\wedi[^x]\\d"), true);
+    }
+
+    #[test]
+    fn match_one_or_more() {
+        assert_eq!(match_re("bag", "bag+"), true);
+        assert_eq!(match_re("bag", "ba+g"), true);
+        assert_eq!(match_re("bags", "ba+gs"), true);
+        assert_eq!(match_re("baaag", "ba+g"), true);
+        assert_eq!(match_re("baaags", "ba+gs"), true);
+        assert_eq!(match_re("baag", "ba+ag"), true);
+        assert_eq!(match_re("baags", "ba+ags"), true);
+        assert_eq!(match_re("baaag", "ba+ag"), true);
+        assert_eq!(match_re("baaags", "ba+ags"), true);
+        assert_eq!(match_re("bag", "ba+ag"), false);
     }
 
 }
