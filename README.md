@@ -33,6 +33,7 @@ Program prints matching lines and returns exit code 0 or returns exit code 1 oth
 - ^ - start of string anchor
 - $ - end of string anchor
 - \+ - one or more times 
+- \* - zero or more times
 - \? - zero or one times
 - \. - wildcard
 - \| - alternation
@@ -60,6 +61,11 @@ Match one or more times
 ```shell
 $ echo -n 'ruuust' | ./target/debug/rgrep -E '^ru+ust$'
 ruuust
+```
+Match one or more times
+```shell
+echo -n 'rust' | ./target/debug/rgrep -E '^ru*st$'
+rust
 ```
 
 Match alternations
