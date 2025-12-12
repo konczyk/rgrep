@@ -1,5 +1,6 @@
 use std::env;
 use std::io;
+use std::io::{BufRead, BufReader};
 use std::process;
 
 fn extract_pattern(pattern_block: &str) -> &str {
@@ -118,15 +119,20 @@ fn main() {
     }
 
     let pattern = env::args().nth(2).unwrap();
-    let mut input_line = String::new();
 
-    io::stdin().read_line(&mut input_line).unwrap();
+    let reader = BufReader::new(io::stdin().lock());
+    let lines: Vec<String> = reader.lines()
+        .filter_map(|line| line.ok())
+        .filter(|line| match_re(line.as_str(), &pattern))
+        .collect();
 
-    if match_re(&input_line, &pattern) {
+    if !lines.is_empty() {
+        lines.iter().for_each(|x| println!("{}", x));
         process::exit(0)
     } else {
         process::exit(1)
     }
+
 }
 
 #[cfg(test)]
