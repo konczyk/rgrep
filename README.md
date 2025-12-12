@@ -16,11 +16,14 @@ cargo test
 
 Execute
 ```shell
-echo -n 'text' | ./target/debug/rgrep -E [PATTERN]
+echo -n 'text' | ./target/debug/rgrep [OPTIONS] -E [PATTERN]
 ```
 Program prints matching lines and returns exit code 0 or returns exit code 1 otherwise
 
-Supported patterns
+#### Options:
+-o print matched substring instead of matched lines
+
+#### Supported patterns:
 - string literals
 - \d - digits
 - \w - word characters
@@ -69,4 +72,11 @@ Match multiple lines
 $ echo -ne 'rust1\nscala2\nphp' | ./target/debug/rgrep -E '\d'
 rust1
 scala2
+```
+
+Match multiple lines but print matches only
+```shell
+$ echo -ne 'rust1\nscala2\nphp' | ./target/debug/rgrep -o -E '\d'
+1
+2
 ```
