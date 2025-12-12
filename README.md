@@ -16,7 +16,7 @@ cargo test
 
 Execute
 ```shell
-echo -n 'text' | ./target/debug/rgrep [OPTION...] -E PATTERN
+./target/debug/rgrep [OPTION...] -E PATTERN [FILE...]
 ```
 Program prints matching lines and returns exit code 0 or returns exit code 1 otherwise
 
@@ -79,4 +79,18 @@ Match multiple lines but print matches only
 $ echo -ne 'rust1\nscala2\nphp' | ./target/debug/rgrep -o -E '\d'
 1
 2
+```
+
+Match lines from a file
+```shell
+$ ./target/debug/rgrep -E 's' data/file1.txt 
+rust1
+scala2
+```
+Match lines from multiple files
+```shell
+$ ./target/debug/rgrep -E 's' data/file1.txt data/file2.txt 
+data/file1.txt:rust1
+data/file1.txt:scala2
+data/file2.txt:rust1
 ```

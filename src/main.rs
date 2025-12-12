@@ -1,4 +1,5 @@
 use std::env;
+use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader};
 use std::process;
@@ -135,7 +136,14 @@ fn match_pattern(input_line: &str, pattern: &str) -> bool {
     }
 }
 
-fn main() {
+fn process_lines<R: BufRead>(reader: R, pattern: &str, mut matches: &mut Vec<String>) -> Vec<String> {
+    reader.lines()
+        .filter_map(|line| line.ok())
+        .filter(|line| match_re(line.as_str(), &pattern, &mut matches))
+        .collect()
+}
+
+fn main() -> io::Result<()> {
     let mut cnt = 1;
     let mut only_matching = false;
 
@@ -151,12 +159,37 @@ fn main() {
 
     let pattern = env::args().nth(cnt + 1).unwrap();
     let mut matches: Vec<String> = Vec::new();
+    let files: Vec<String> = env::args().skip(cnt + 2).collect();
 
-    let reader = BufReader::new(io::stdin().lock());
-    let lines: Vec<String> = reader.lines()
-        .filter_map(|line| line.ok())
-        .filter(|line| match_re(line.as_str(), &pattern, &mut matches))
-        .collect();
+    let lines = if files.is_empty() {
+        process_lines(BufReader::new(io::stdin().lock()), &pattern, &mut matches)
+    } else {
+        let mut result = Vec::new();
+        for filename in &files {
+            match File::open(&filename) {
+                Ok(file) => {
+                    let lines: Vec<String> = process_lines(BufReader::new(file), &pattern, &mut matches);
+                    if !lines.is_empty() {
+                        result.extend(lines
+                            .iter()
+                            .map(|line|
+                                if files.len() > 1 {
+                                    format!("{}:{}", filename, line)
+                                } else {
+                                    format!("{}", line)
+                                }
+                            )
+                            .collect::<Vec<String>>()
+                        );
+                    }
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+        }
+        result
+    };
 
     if !lines.is_empty() {
         if only_matching {
