@@ -16,7 +16,7 @@ cargo test
 
 Execute
 ```shell
-echo -n 'text' | ./target/debug/rgrep [OPTIONS] -E [PATTERN]
+echo -n 'text' | ./target/debug/rgrep [OPTION...] -E PATTERN
 ```
 Program prints matching lines and returns exit code 0 or returns exit code 1 otherwise
 
