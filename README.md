@@ -22,6 +22,7 @@ Program prints matching lines and returns exit code 0 or returns exit code 1 oth
 
 #### Options:
 -o print matched substring instead of matched lines
+-r search files recursively 
 
 #### Supported patterns:
 - string literals
@@ -90,6 +91,14 @@ scala2
 Match lines from multiple files
 ```shell
 $ ./target/debug/rgrep -E 's' data/file1.txt data/file2.txt 
+data/file1.txt:rust1
+data/file1.txt:scala2
+data/file2.txt:rust1
+```
+
+Match lines from multiple files by search through directory
+```shell
+$ ./target/debug/rgrep -r -E 's' data
 data/file1.txt:rust1
 data/file1.txt:scala2
 data/file2.txt:rust1

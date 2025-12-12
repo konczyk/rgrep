@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, fs};
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader};
@@ -22,19 +22,24 @@ fn extract_pattern(pattern_block: &str) -> &str {
 
 fn match_re(input_line: &str, pattern: &str, matches: &mut Vec<String>) -> bool {
     if pattern.starts_with('^') {
-        let mut input_match = String::new();
-        let result = match_block(&input_line, &pattern[1..], 0, &mut input_match);
-        matches.push(input_match.clone());
+        let mut input_match = Some(String::new());
+        let result = match_block(&input_line, &pattern[1..], 0, &mut input_match, false);
+        if let Some(im) = input_match {
+            matches.push(im.clone());
+        }
         result
     } else {
         let mut pad = 0;
         for (i, v) in input_line.chars().enumerate() {
-            let mut input_match = String::new();
+            let mut input_match = Some(String::new());
             pad = pad + v.to_string().len();
-            if match_block(&input_line, &pattern, i, &mut input_match) {
-                matches.push(input_match.clone());
-                if pad + input_match.len() < input_line.len() {
-                    match_re(&input_line[pad + input_match.len()-1..], pattern, matches);
+            if match_block(&input_line, &pattern, i, &mut input_match, false) {
+                if let Some(im) = &input_match {
+                    matches.push(im.clone());
+                }
+                let match_len = input_match.map_or(0, |x| x.len());
+                if pad + match_len < input_line.len() {
+                    match_re(&input_line[pad + match_len - 1..], pattern, matches);
                 }
                 return true
             }
@@ -48,15 +53,16 @@ fn match_re(input_line: &str, pattern: &str, matches: &mut Vec<String>) -> bool 
     }
 }
 
-fn match_repeats(input_line: &str, pattern: &str, pattern_ahead: &str, input_skip: usize, pattern_skip: usize) -> (usize, usize) {
-    let p_ahead = extract_pattern(&pattern_ahead[pattern_skip..]);
-    match input_line.chars().skip(input_skip).next() {
-        Some(c) if !p_ahead.is_empty() && match_pattern(c.to_string().as_str(), pattern) && !match_pattern(c.to_string().as_str(), p_ahead) =>
-            match_repeats(input_line, pattern, pattern_ahead, input_skip + 1, pattern_skip),
-        Some(c) if !p_ahead.is_empty() && match_pattern(c.to_string().as_str(), pattern) && match_pattern(c.to_string().as_str(), p_ahead) =>
-            match_repeats(input_line, pattern, pattern_ahead, input_skip + 1, pattern_skip + p_ahead.len()),
-        _ =>
-            (input_skip, pattern_skip + 1)
+fn match_repeats(input_line: &str, pattern: &str, pattern_ahead: &str, input_skip: usize) -> usize {
+    let consumed = input_line.chars().skip(input_skip).take_while(|c| match_pattern(c.to_string().as_str(), pattern)).count();
+    match_backtrack(input_line.chars().skip(input_skip).collect::<String>().as_str(), pattern_ahead, consumed)
+}
+
+fn match_backtrack(input_line: &str, pattern: &str, consumed: usize) -> usize {
+    if consumed == 0 || match_block(input_line, pattern, consumed, &mut None, false) {
+        consumed
+    } else {
+        match_backtrack(input_line, pattern, consumed - 1)
     }
 }
 
@@ -71,7 +77,12 @@ fn match_one_or_none(input_line: &str, pattern: &str, input_skip: usize, pattern
     }
 }
 
-fn match_block(input_line: &str, pattern: &str, skip: usize, input_match: &mut String) -> bool {
+fn match_block(input_line: &str, pattern: &str, skip: usize, input_match: &mut Option<String>, reset: bool) -> bool {
+    if reset && let Some(s) = input_match.as_mut() {
+        let str = s.chars().take(skip).collect::<String>();
+        s.clear();
+        s.push_str(str.as_str());
+    }
     if pattern == "$" {
         input_line.chars().skip(skip).count() == 0
     } else if pattern.chars().count() > 0 {
@@ -79,28 +90,40 @@ fn match_block(input_line: &str, pattern: &str, skip: usize, input_match: &mut S
         if (single_pattern.starts_with('(')) && single_pattern.ends_with(')') {
             single_pattern[1..single_pattern.len() - 1]
                 .split_terminator('|')
-                .any(|x| match_block(input_line, format!("{}{}", x, &pattern[single_pattern.len()..]).as_str(), skip, input_match))
+                .any(|x| match_block(input_line, format!("{}{}", x, &pattern[single_pattern.len()..]).as_str(), skip, input_match, true))
         } else {
             let quantifier = pattern.chars().skip(single_pattern.chars().count()).next();
             match input_line.chars().skip(skip).next() {
                 Some(c) if quantifier == Some('+') => {
-                    let (input_skip, pattern_skip) = match_repeats(&input_line, single_pattern, &pattern[single_pattern.len() + 1..], skip + 1, 0);
-                    input_match.push_str(&input_line[skip..input_skip]);
-                    match_pattern(c.to_string().as_str(), single_pattern)
-                        && match_block(&input_line, &pattern[single_pattern.len() + pattern_skip..], input_skip, input_match)
+                    if match_pattern(c.to_string().as_str(), single_pattern) {
+                        if let Some(s) = input_match.as_mut() {
+                            s.push_str(c.to_string().as_str());
+                        }
+                        let consumed = match_repeats(&input_line, single_pattern, &pattern[single_pattern.len() + 1..], skip+1);
+                        if let Some(s) = input_match.as_mut() {
+                            s.push_str(&input_line[skip + 1..skip + consumed + 1]);
+                        }
+                        match_block(&input_line, &pattern[single_pattern.len() + 1..], skip + consumed + 1, input_match, false)
+                    } else {
+                        false
+                    }
                 },
                 Some(_) if quantifier == Some('?') => {
                     let (input_skip, pattern_skip) = match_one_or_none(&input_line, single_pattern, skip, 0);
-                    input_match.push_str(&input_line[skip..input_skip]);
-                    match_block(&input_line, &pattern[pattern_skip..], input_skip, input_match)
+                    if let Some(s) = input_match.as_mut() {
+                        s.push_str(&input_line[skip..input_skip]);
+                    }
+                    match_block(&input_line, &pattern[pattern_skip..], input_skip, input_match, false)
                 },
                 None if quantifier == Some('?') => {
-                    match_block(&input_line, &pattern[single_pattern.len() + 1..], skip, input_match)
+                    match_block(&input_line, &pattern[single_pattern.len() + 1..], skip, input_match, false)
                 },
                 Some(c) => {
                     if match_pattern(c.to_string().as_str(), single_pattern) {
-                        input_match.push_str(c.to_string().as_str());
-                        match_block(&input_line, &pattern[single_pattern.len()..], skip + 1, input_match)
+                        if let Some(s) = input_match.as_mut() {
+                            s.push_str(c.to_string().as_str());
+                        }
+                        match_block(&input_line, &pattern[single_pattern.len()..], skip + 1, input_match, false)
                     } else {
                         false
                     }
@@ -143,12 +166,37 @@ fn process_lines<R: BufRead>(reader: R, pattern: &str, mut matches: &mut Vec<Str
         .collect()
 }
 
+fn collect_files(dir: String) -> Vec<String> {
+    let mut result = Vec::new();
+    let dir_iter = match fs::read_dir(dir) {
+        Ok(iter) => iter,
+        Err(_) => return Vec::new()
+    };
+
+    result.extend(
+        dir_iter
+            .filter_map(|entry| entry.ok())
+            .flat_map(|entry| {
+                let path = entry.path().to_string_lossy().to_string();
+                if entry.path().is_file() { vec![path] } else { collect_files(path) }
+            })
+    );
+
+    result
+}
+
 fn main() -> io::Result<()> {
     let mut cnt = 1;
     let mut only_matching = false;
+    let mut recursive = false;
 
     if env::args().nth(cnt).unwrap() == "-o" {
         only_matching = true;
+        cnt = cnt + 1;
+    }
+
+    if env::args().nth(cnt).unwrap() == "-r" {
+        recursive = true;
         cnt = cnt + 1;
     }
 
@@ -159,9 +207,13 @@ fn main() -> io::Result<()> {
 
     let pattern = env::args().nth(cnt + 1).unwrap();
     let mut matches: Vec<String> = Vec::new();
-    let files: Vec<String> = env::args().skip(cnt + 2).collect();
+    let files: Vec<String> = if !recursive {
+        env::args().skip(cnt + 2).collect()
+    } else {
+        collect_files(env::args().skip(cnt + 2).next().unwrap())
+    };
 
-    let lines = if files.is_empty() {
+    let lines = if files.is_empty() && !recursive {
         process_lines(BufReader::new(io::stdin().lock()), &pattern, &mut matches)
     } else {
         let mut result = Vec::new();
@@ -173,7 +225,7 @@ fn main() -> io::Result<()> {
                         result.extend(lines
                             .iter()
                             .map(|line|
-                                if files.len() > 1 {
+                                if files.len() > 1 || recursive {
                                     format!("{}:{}", filename, line)
                                 } else {
                                     format!("{}", line)
@@ -312,6 +364,11 @@ mod tests {
     #[test]
     fn match_one_or_more() {
         let mut matches = Vec::new();
+        assert_eq!(match_re("45", "\\d+", &mut matches), true);
+        assert_eq!(matches, vec!["45"]);
+        matches = Vec::new();
+        assert_eq!(match_re("pear", ".+er", &mut matches), false);
+        matches = Vec::new();
         assert_eq!(match_re("bag", "bag+", &mut matches), true);
         assert_eq!(matches, vec!["bag"]);
         matches = Vec::new();
@@ -338,6 +395,7 @@ mod tests {
         matches = Vec::new();
         assert_eq!(match_re("baaags", "ba+ags", &mut matches), true);
         assert_eq!(matches, vec!["baaags"]);
+        matches = Vec::new();
         assert_eq!(match_re("bag", "ba+ag", &mut matches), false);
     }
 
@@ -384,6 +442,9 @@ mod tests {
     #[test]
     fn match_or() {
         let mut matches = Vec::new();
+        assert_eq!(match_re("scala", "(swift|scala)", &mut matches), true);
+        assert_eq!(matches, vec!["scala"]);
+        matches = Vec::new();
         assert_eq!(match_re("rust", "(rust|scala)", &mut matches), true);
         assert_eq!(matches, vec!["rust"]);
         matches = Vec::new();
