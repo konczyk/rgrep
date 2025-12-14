@@ -40,6 +40,7 @@ Program prints matching lines and returns exit code 0 or returns exit code 1 oth
 - {n} - exactly n times 
 - {n,} - at least n times
 - {n,m} - at least n and at most m times
+- \n - backreferences
 
 ## Examples
 
@@ -90,6 +91,12 @@ $ echo -ne 'rust123' | ./target/debug/rgrep -o -E '\d{2,}'
 123
 ```
 
+Match with backreferences
+```shell
+$ echo -ne 'rust is great and great is scala' | ./target/debug/rgrep -o -E '(\w+) and \1'
+great and great
+```
+
 Match multiple lines
 ```shell
 $ echo -ne 'rust1\nscala2\nphp' | ./target/debug/rgrep -E '\d'
@@ -110,6 +117,7 @@ $ ./target/debug/rgrep -E 's' data/file1.txt
 rust1
 scala2
 ```
+
 Match lines from multiple files
 ```shell
 $ ./target/debug/rgrep -E 's' data/file1.txt data/file2.txt 
