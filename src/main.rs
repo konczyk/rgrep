@@ -1,8 +1,32 @@
-use std::{env, fs};
+use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader};
 use std::process;
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+struct Args {
+
+    /// Print matched substring instead of matched lines
+    #[arg(short = 'o')]
+    only_matching: bool,
+
+    /// Search files recursively
+    #[arg( short = 'r')]
+    recursive: bool,
+
+    #[arg(
+        short = 'E',
+        value_name = "PATTERN",
+        required = true,
+    )]
+    pattern: String,
+
+    // --- Positional Arguments ---
+    #[arg(value_name = "FILE...")]
+    files: Vec<String>,
+}
 
 fn extract_pattern(pattern_block: &str) -> &str {
     if pattern_block.chars().count() > 1 && (pattern_block.starts_with("\\d") || pattern_block.starts_with("\\w"))  {
@@ -292,45 +316,35 @@ fn collect_files(dir: String) -> Vec<String> {
 }
 
 fn main() -> io::Result<()> {
-    let mut cnt = 1;
-    let mut only_matching = false;
-    let mut recursive = false;
+    let args = Args::parse();
 
-    if env::args().nth(cnt).unwrap() == "-o" {
-        only_matching = true;
-        cnt = cnt + 1;
-    }
-
-    if env::args().nth(cnt).unwrap() == "-r" {
-        recursive = true;
-        cnt = cnt + 1;
-    }
-
-    if env::args().nth(cnt).unwrap() != "-E" {
-        println!("Missing argument '-E'");
-        process::exit(1);
-    }
-
-    let pattern = env::args().nth(cnt + 1).unwrap();
-    let files: Vec<String> = if !recursive {
-        env::args().skip(cnt + 2).collect()
+    let files: Vec<String> = if !args.recursive {
+        args.files
     } else {
-        collect_files(env::args().skip(cnt + 2).next().unwrap())
+        match args.files.get(0) {
+            Some(path) => {
+                collect_files(path.clone())
+            }
+            None => {
+                eprintln!("Error: The '-r' flag requires exactly one directory argument.");
+                process::exit(1);
+            }
+        }
     };
 
-    let lines = if files.is_empty() && !recursive {
-        process_lines(BufReader::new(io::stdin().lock()), &pattern)
+    let lines = if files.is_empty() && !args.recursive {
+        process_lines(BufReader::new(io::stdin().lock()), &args.pattern)
     } else {
         let mut result = Vec::new();
         for filename in &files {
             match File::open(&filename) {
                 Ok(file) => {
-                    let lines = process_lines(BufReader::new(file), &pattern);
+                    let lines = process_lines(BufReader::new(file), &args.pattern);
                     if !lines.is_empty() {
                         result.extend(lines
                             .into_iter()
                             .map(|(l, m)| {
-                                let line = if files.len() > 1 || recursive {
+                                let line = if files.len() > 1 || args.recursive {
                                     format!("{}:{}", filename, l)
                                 } else {
                                     format!("{}", l)
@@ -351,7 +365,7 @@ fn main() -> io::Result<()> {
 
     match lines.iter().find(|(_, matches)| !matches.is_empty()) {
         Some(_) => {
-            if only_matching {
+            if args.only_matching {
                 lines.iter()
                     .filter(|(_, matches)| !matches.is_empty())
                     .for_each(|(_, matches)| matches.iter()

@@ -16,13 +16,19 @@ cargo test
 
 Execute
 ```shell
-./target/debug/rgrep [OPTION...] -E PATTERN [FILE...]
+$ ./target/debug/rgrep --help
+Usage: rgrep [OPTIONS] -E <PATTERN> [FILE...]...
+
+Arguments:
+  [FILE...]...  
+
+Options:
+  -o            Print matched substring instead of matched lines
+  -r            Search files recursively
+  -E <PATTERN>  
+  -h, --help    Print help
 ```
 Program prints matching lines and returns exit code 0 or returns exit code 1 otherwise
-
-#### Options:
--o print matched substring instead of matched lines
--r search files recursively 
 
 #### Supported patterns:
 - string literals
