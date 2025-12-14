@@ -39,6 +39,7 @@ Program prints matching lines and returns exit code 0 or returns exit code 1 oth
 - \| - alternation
 - {n} - exactly n times 
 - {n,} - at least n times
+- {n,m} - at least n and at most m times
 
 ## Examples
 

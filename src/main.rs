@@ -156,6 +156,23 @@ fn match_at_least(input: &str, pattern: &str, pattern_ahead: &str, skip: usize, 
     }
 }
 
+fn match_between(input: &str, pattern: &str, pattern_ahead: &str, skip: usize, n: usize, m: usize) -> (bool, usize) {
+    let (matched, consumed, matches) = consume(&input, &pattern, skip, 0, Some(m));
+    if matches < n {
+        (false, 0)
+    } else if matched && matches >= n && matches <= m && (pattern_ahead == "" || match_block(input.chars().skip(consumed).collect::<String>().as_str(), pattern_ahead, 0).0) {
+        (matched, consumed)
+    } else {
+        let found = (m..1)
+            .map(|x| consume(&input, &pattern, skip, 0, Some(x)))
+            .find(|(_, consumed2, _)| match_block(input.chars().skip(*consumed2).collect::<String>().as_str(), pattern_ahead, 0).0);
+        match found {
+            Some((matched, consumed, matches)) if matches >= n && matches <= m => (matched, consumed),
+            _ => (false, 0),
+        }
+    }
+}
+
 fn match_n(input: &str, pattern: &str, pattern_ahead: &str, skip: usize) -> (bool, usize) {
     let (_, consumed, _) = consume(&input, &pattern, skip, 0, None);
     let (_, consumed_backtracked) = backtrack(input.chars().skip(skip).collect::<String>().as_str(), pattern_ahead, consumed);
@@ -215,8 +232,9 @@ fn match_block(input: &str, pattern: &str, skip: usize) -> (bool, usize) {
             (Some(q), _, _) if q == "+" => match_one_or_more(&match_input.as_str(), &current_pattern, &pattern[current_pattern.len() + quantifier_size ..]),
             (Some(q), _, _) if q == "*" => match_n(&match_input.as_str(), &current_pattern, &pattern[current_pattern.len() + quantifier_size ..], 0),
             (Some(q), _, _) if q == "?" => match_one_or_none(&match_input.as_str(), &current_pattern),
-            (Some(_), Some(m), Some(n)) if m == n => match_exactly(&match_input.as_str(), &current_pattern, 0, m),
-            (Some(_), Some(m), None) => match_at_least(&match_input.as_str(), &current_pattern, &pattern[current_pattern.len() + quantifier_size ..], 0, m),
+            (Some(_), Some(n), Some(m)) if n == m => match_exactly(&match_input.as_str(), &current_pattern, 0, n),
+            (Some(_), Some(n), None) => match_at_least(&match_input.as_str(), &current_pattern, &pattern[current_pattern.len() + quantifier_size ..], 0, n),
+            (Some(_), Some(n), Some(m)) => match_between(&match_input.as_str(), &current_pattern, &pattern[current_pattern.len() + quantifier_size ..], 0, n, m),
             _ => match_pattern(&match_input.as_str(), &current_pattern)
         };
 
@@ -489,6 +507,14 @@ mod tests {
         assert_eq!(match_re("aaa", "[ab]{3,}"), vec!["aaa"]);
         assert_eq!(match_re("aaaacc", "a{1,}cc"), vec!["aaaacc"]);
         assert_eq!(match_re("ok", "\\w{3,}"), vec![] as Vec<String>);
+    }
+
+    #[test]
+    fn match_between_n_and_m_times() {
+        assert_eq!(match_re("aaa", "a{2,3}"), vec!["aaa"]);
+        assert_eq!(match_re("aaaaa", "a{2,3}"), vec!["aaa", "aa"]);
+        assert_eq!(match_re("aa", "a{2,3}"), vec!["aa"]);
+        assert_eq!(match_re("a", "a{2,3}"), vec![] as Vec<String>);
     }
 
 }
