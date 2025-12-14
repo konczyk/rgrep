@@ -24,7 +24,7 @@ struct Args {
     pattern: String,
 
     // --- Positional Arguments ---
-    #[arg(value_name = "FILE...")]
+    #[arg(value_name = "FILE")]
     files: Vec<String>,
 }
 
