@@ -37,6 +37,8 @@ Program prints matching lines and returns exit code 0 or returns exit code 1 oth
 - \? - zero or one times
 - \. - wildcard
 - \| - alternation
+- {n} - exactly n times 
+- {n,} - at least n times
 
 ## Examples
 
@@ -48,7 +50,8 @@ text9
 
 Match 2 digits followed by word character, string literal and a character group
 ```shell
-echo -n '¼more78_asone' | ./target/debug/rgrep -E '\d\d\was[done]'
+$ echo -n '¼more78_asone' | ./target/debug/rgrep -E '\d\d\was[done]'
+¼more78_asone
 ```
 
 Match exact word
@@ -64,7 +67,7 @@ ruuust
 ```
 Match one or more times
 ```shell
-echo -n 'rust' | ./target/debug/rgrep -E '^ru*st$'
+$ echo -n 'rust' | ./target/debug/rgrep -E '^ru*st$'
 rust
 ```
 
@@ -72,6 +75,18 @@ Match alternations
 ```shell
 $ echo -n 'I love rust' | ./target/debug/rgrep -E 'I love (r?us[tv]|scala)$'
 I love rust
+```
+
+Match exactly n times
+```shell
+$ echo -ne 'rust123' | ./target/debug/rgrep -E '\d{2}'
+rust123
+```
+
+Match at least n times
+```shell
+$ echo -ne 'rust123' | ./target/debug/rgrep -o -E '\d{2,}'
+123
 ```
 
 Match multiple lines

@@ -13,6 +13,9 @@ fn extract_pattern(pattern_block: &str) -> &str {
     } else if pattern_block.starts_with("(") && pattern_block.chars().count() > 1 {
         let len = pattern_block.chars().take_while(|x| *x != ')').count()+1;
         &pattern_block[..len]
+    } else if pattern_block.starts_with("{") && pattern_block.chars().count() > 1 {
+        let len = pattern_block.chars().take_while(|x| *x != '}').count()+1;
+        &pattern_block[..len]
     } else if pattern_block.chars().count() > 0 {
         &pattern_block[..1]
     } else {
@@ -20,164 +23,218 @@ fn extract_pattern(pattern_block: &str) -> &str {
     }
 }
 
-fn match_re(input_line: &str, pattern: &str, matches: &mut Vec<String>) -> bool {
+fn extract_quantifier(pattern: &str, skip: usize) -> (Option<String>, Option<usize>, Option<usize>) {
+    match pattern.chars().skip(skip).next() {
+        Some('+') => (Some("+".to_string()), None, None),
+        Some('*') => (Some("*".to_string()), None, None),
+        Some('?') => (Some("?".to_string()), None, None),
+        Some(c) if c == '{' => {
+            let q = pattern.chars().skip(skip+1).take_while(|x| *x != '}').collect::<String>();
+            match q.split_once(',') {
+                Some((left, right)) => (Some(format!("{{{}}}", q)), left.parse::<usize>().ok(), right.parse::<usize>().ok()),
+                None => (Some(format!("{{{}}}", q)), q.parse::<usize>().ok(), q.parse::<usize>().ok())
+            }
+        }
+        _ => (None, None, None)
+    }
+}
+
+fn match_re(input: &str, pattern: &str) -> Vec<String> {
+    let mut matches = Vec::new();
     if pattern.starts_with('^') {
-        let mut input_match = Some(String::new());
-        let result = match_block(&input_line, &pattern[1..], 0, &mut input_match, false);
-        if let Some(im) = input_match {
-            matches.push(im.clone());
+        let (matched,  consumed) = match_block(&input, &pattern[1..], 0);
+        if matched {
+            let matched_input = input.chars().take(consumed).collect();
+            matches.push(matched_input);
         }
-        result
+        matches
     } else {
-        let mut pad = 0;
-        for (i, v) in input_line.chars().enumerate() {
-            let mut input_match = Some(String::new());
-            pad = pad + v.to_string().len();
-            if match_block(&input_line, &pattern, i, &mut input_match, false) {
-                if let Some(im) = &input_match {
-                    matches.push(im.clone());
-                }
-                let match_len = input_match.map_or(0, |x| x.len());
-                if pad + match_len < input_line.len() {
-                    match_re(&input_line[pad + match_len - 1..], pattern, matches);
-                }
-                return true
+        for (i, _) in input.chars().enumerate() {
+            let skipped_input = input.chars().skip(i).collect::<String>();
+            let (matched, consumed) = match_block(&skipped_input.as_str(), &pattern, 0);
+            if matched {
+                let matched_input = skipped_input.chars().take(consumed).collect();
+                matches.push(matched_input);
+                matches.extend(match_re(&skipped_input.chars().skip(consumed).collect::<String>(), pattern));
+                return matches
             }
         }
-        let pat = &pattern[extract_pattern(pattern).len()..];
-        if input_line.is_empty() && (pat.ends_with('?') || pat.ends_with('*')) {
-            matches.push("".to_string());
-            true
-        } else {
-            false
-        }
+        vec![]
     }
 }
 
-fn match_repeats(input_line: &str, pattern: &str, pattern_ahead: &str, input_skip: usize) -> usize {
-    let consumed = input_line.chars().skip(input_skip).take_while(|c| match_pattern(c.to_string().as_str(), pattern)).count();
-    backtrack(input_line.chars().skip(input_skip).collect::<String>().as_str(), pattern_ahead, consumed)
-}
-
-fn backtrack(input_line: &str, pattern: &str, consumed: usize) -> usize {
-    if consumed == 0 || match_block(input_line, pattern, consumed, &mut None, false) {
-        consumed
-    } else {
-        backtrack(input_line, pattern, consumed - 1)
-    }
-}
-
-fn match_zero_or_one(input_line: &str, pattern: &str, input_skip: usize, pattern_skip: usize) -> (usize, usize) {
-    match input_line.chars().skip(input_skip).next() {
-        Some(c) if match_pattern(c.to_string().as_str(), pattern) =>
-            (input_skip + 1, pattern_skip + pattern.len() + 1),
-        Some(c) if !match_pattern(c.to_string().as_str(), pattern) =>
-            (input_skip, pattern_skip + pattern_skip + pattern.len() + 1),
-        _ =>
-            (input_skip, pattern_skip)
-    }
-}
-
-fn match_block(input_line: &str, pattern: &str, skip: usize, input_match: &mut Option<String>, reset: bool) -> bool {
-    if reset && let Some(s) = input_match.as_mut() {
-        let str = s.chars().take(skip).collect::<String>();
-        s.clear();
-        s.push_str(str.as_str());
-    }
-    if pattern == "$" {
-        input_line.chars().skip(skip).count() == 0
-    } else if pattern.chars().count() > 0 {
-        let single_pattern = extract_pattern(pattern);
-        if (single_pattern.starts_with('(')) && single_pattern.ends_with(')') {
-            single_pattern[1..single_pattern.len() - 1]
-                .split_terminator('|')
-                .any(|x| match_block(input_line, format!("{}{}", x, &pattern[single_pattern.len()..]).as_str(), skip, input_match, true))
-        } else {
-            let quantifier = pattern.chars().skip(single_pattern.chars().count()).next();
-            match input_line.chars().skip(skip).next() {
-                Some(c) if quantifier == Some('+') => {
-                    if match_pattern(c.to_string().as_str(), single_pattern) {
-                        if let Some(s) = input_match.as_mut() {
-                            s.push_str(c.to_string().as_str());
-                        }
-                        let consumed = match_repeats(&input_line, single_pattern, &pattern[single_pattern.len() + 1..], skip+1);
-                        if let Some(s) = input_match.as_mut() {
-                            s.push_str(&input_line[skip + 1..skip + consumed + 1]);
-                        }
-                        match_block(&input_line, &pattern[single_pattern.len() + 1..], skip + consumed + 1, input_match, false)
-                    } else {
-                        false
-                    }
-                },
-                Some(c) if quantifier == Some('*') => {
-                    if match_pattern(c.to_string().as_str(), single_pattern) {
-                        if let Some(s) = input_match.as_mut() {
-                            s.push_str(c.to_string().as_str());
-                        }
-                        let consumed = match_repeats(&input_line, single_pattern, &pattern[single_pattern.len() + 1..], skip+1);
-                        if let Some(s) = input_match.as_mut() {
-                            s.push_str(&input_line[skip + 1..skip + consumed + 1]);
-                        }
-                        match_block(&input_line, &pattern[single_pattern.len() + 1..], skip + consumed + 1, input_match, false)
-                    } else {
-                        match_block(&input_line, &pattern[single_pattern.len() + 1..], skip, input_match, false)
-                    }
-                },
-                Some(_) if quantifier == Some('?') => {
-                    let (input_skip, pattern_skip) = match_zero_or_one(&input_line, single_pattern, skip, 0);
-                    if let Some(s) = input_match.as_mut() {
-                        s.push_str(&input_line[skip..input_skip]);
-                    }
-                    match_block(&input_line, &pattern[pattern_skip..], input_skip, input_match, false)
-                },
-                None if quantifier == Some('?') || quantifier == Some('*') => {
-                    match_block(&input_line, &pattern[single_pattern.len() + 1..], skip, input_match, false)
-                },
-                Some(c) => {
-                    if match_pattern(c.to_string().as_str(), single_pattern) {
-                        if let Some(s) = input_match.as_mut() {
-                            s.push_str(c.to_string().as_str());
-                        }
-                        match_block(&input_line, &pattern[single_pattern.len()..], skip + 1, input_match, false)
-                    } else {
-                        false
-                    }
-                },
-                None => false
-            }
-        }
-    } else {
-        true
-    }
-}
-
-fn match_pattern(input_line: &str, pattern: &str) -> bool {
+fn match_pattern(input: &str, pattern: &str) -> (bool, usize) {
     if pattern == "." {
-        true
+        (true, 1)
     } else if pattern.chars().count() == 1 {
-        input_line.contains(pattern)
+        (input.starts_with(pattern), 1)
     } else if pattern == "\\d" {
-        input_line.chars().any(|x| x.is_ascii_digit())
+        (input.chars().next().map_or(false, |x| x.is_ascii_digit()), 1)
     } else if pattern == "\\w" {
-        input_line.chars().any(|x| x.is_ascii_alphabetic() || x.is_ascii_digit() || x == '_')
+        (input.chars().next().map_or(false, |x| x.is_ascii_alphabetic() || x.is_ascii_digit() || x == '_'), 1)
+    } else if pattern.starts_with('(') && pattern.ends_with(')') && !pattern.contains('|') {
+        match_block(input, pattern.trim_matches(|c| c == '(' || c == ')'), 0)
     } else if pattern.starts_with("[^") && pattern.ends_with(']') {
-        let pat = &pattern[2..pattern.len() - 1];
-        input_line
-            .chars()
-            .any(|x| !pat.contains(x))
+        match_any_except(input, &pattern[2..pattern.len() - 1], 0)
     } else if pattern.starts_with('[') && pattern.ends_with(']') {
-        pattern[1..pattern.len() - 1]
-            .chars()
-            .any(|x| input_line.contains(x))
+        match_any(input, &pattern[1..pattern.len() - 1], 0)
+    } else if pattern.starts_with('(') && pattern.ends_with(')') {
+        match_or(input, &pattern[1..pattern.len() - 1])
     } else {
         panic!("Unhandled pattern: {}", pattern)
     }
 }
 
-fn process_lines<R: BufRead>(reader: R, pattern: &str, mut matches: &mut Vec<String>) -> Vec<String> {
+fn match_or(input: &str, patterns: &str) -> (bool, usize) {
+    patterns
+        .split_terminator('|')
+        .map(|pattern| match_pattern(input, format!("({})", pattern).as_str()))
+        .find(|x| x.0)
+        .unwrap_or((false, 0))
+}
+
+fn match_any(input: &str, patterns: &str, skip: usize) -> (bool, usize) {
+    if patterns.is_empty() {
+        (false, 0)
+    } else {
+        let pattern = extract_pattern(patterns);
+        let (matched, consumed) = match_pattern(input, pattern);
+        if !matched {
+            match_any(input, &patterns[skip..], pattern.len())
+        } else {
+            (matched, consumed)
+        }
+    }
+}
+
+fn match_any_except(input: &str, patterns: &str, skip: usize) -> (bool, usize) {
+    if patterns.is_empty() {
+        (true, 1)
+    } else {
+        let pattern = extract_pattern(patterns);
+        let (matched, _) = match_pattern(input, pattern);
+        if matched {
+            (false, 0)
+        } else {
+            match_any_except(input, &patterns[skip..], pattern.len())
+        }
+    }
+}
+
+fn match_one_or_more(input: &str, pattern: &str, pattern_ahead: &str) -> (bool, usize) {
+    let (matched, consumed) = match_pattern(&input, &pattern);
+    if matched {
+        match_n(&input, &pattern, &pattern_ahead, consumed)
+    } else {
+        (false, 0)
+    }
+}
+
+fn match_exactly(input: &str, pattern: &str, skip: usize, n: usize) -> (bool, usize) {
+    let (matched, consumed, matches) = consume(&input, &pattern, skip, 0, Some(n));
+    if matches < n {
+        (false, 0)
+    } else {
+        (matched, consumed)
+    }
+}
+
+fn match_at_least(input: &str, pattern: &str, pattern_ahead: &str, skip: usize, n: usize) -> (bool, usize) {
+    let (matched, consumed, matches) = consume(&input, &pattern, skip, 0, None);
+    if matches < n {
+        (false, 0)
+    } else if matched && (pattern_ahead == "" || match_block(input.chars().skip(consumed).collect::<String>().as_str(), pattern_ahead, 0).0) {
+        (matched, consumed)
+    } else {
+        let found = (matches-1..1)
+            .map(|x| consume(&input, &pattern, skip, 0, Some(x)))
+            .find(|(_, consumed2, _)| match_block(input.chars().skip(*consumed2).collect::<String>().as_str(), pattern_ahead, 0).0);
+        match found {
+            Some((matched, consumed, matches)) if matches >= n => (matched, consumed),
+            _ => (false, 0),
+        }
+    }
+}
+
+fn match_n(input: &str, pattern: &str, pattern_ahead: &str, skip: usize) -> (bool, usize) {
+    let (_, consumed, _) = consume(&input, &pattern, skip, 0, None);
+    let (_, consumed_backtracked) = backtrack(input.chars().skip(skip).collect::<String>().as_str(), pattern_ahead, consumed);
+    (true, skip + consumed_backtracked)
+}
+
+fn consume(input: &str, pattern: &str, skip: usize, matches: usize, n: Option<usize>) -> (bool, usize, usize) {
+    if n.map_or(false, |x| x == matches) || input == "" {
+        (true, 0, matches)
+    } else {
+        let (matched, consumed) = match_pattern(input.chars().skip(skip).collect::<String>().as_str(), pattern);
+        if matched {
+            let (matched_rest, consumed_rest, matches_rest) = consume(input.chars().skip(skip).collect::<String>().as_str(), pattern, consumed, matches + 1, n);
+            if matched_rest {
+                (true, consumed + consumed_rest, matches_rest)
+            } else {
+                (true, consumed, matches_rest)
+            }
+        } else {
+            (false, 0, matches)
+        }
+    }
+}
+
+fn backtrack(input: &str, pattern: &str, iter: usize) -> (bool, usize) {
+    if iter == 0 {
+        (true, 0)
+    } else {
+        let (matched, _) = match_block(&input.chars().skip(iter).collect::<String>(), &pattern, 0);
+        if matched {
+            (true, iter)
+        } else {
+            backtrack(input, pattern, iter - 1)
+        }
+    }
+}
+
+fn match_one_or_none(input: &str, pattern: &str) -> (bool, usize) {
+    let (matched, _) = match_pattern(input, pattern);
+    if matched {
+        (true, 1)
+    } else {
+        (true, 0)
+    }
+}
+
+fn match_block(input: &str, pattern: &str, skip: usize) -> (bool, usize) {
+    if pattern == "$" {
+        (input.chars().skip(skip).count() == 0, 0)
+    } else if pattern.chars().count() > 0 {
+        let current_pattern = extract_pattern(pattern);
+        let quantifier = extract_quantifier(&pattern, current_pattern.chars().count());
+        let quantifier_size = quantifier.0.as_ref().map_or(0, |x| x.len());
+
+        let match_input = input.chars().skip(skip).collect::<String>();
+        let (matched, consumed) = match quantifier {
+            (Some(q), _, _) if q == "+" => match_one_or_more(&match_input.as_str(), &current_pattern, &pattern[current_pattern.len() + quantifier_size ..]),
+            (Some(q), _, _) if q == "*" => match_n(&match_input.as_str(), &current_pattern, &pattern[current_pattern.len() + quantifier_size ..], 0),
+            (Some(q), _, _) if q == "?" => match_one_or_none(&match_input.as_str(), &current_pattern),
+            (Some(_), Some(m), Some(n)) if m == n => match_exactly(&match_input.as_str(), &current_pattern, 0, m),
+            (Some(_), Some(m), None) => match_at_least(&match_input.as_str(), &current_pattern, &pattern[current_pattern.len() + quantifier_size ..], 0, m),
+            _ => match_pattern(&match_input.as_str(), &current_pattern)
+        };
+
+        if matched {
+            let (matched_rest, consumed_rest) = match_block(&input, &pattern[current_pattern.len() + quantifier_size ..], skip + consumed);
+            (matched && matched_rest, consumed + consumed_rest)
+        } else {
+            (false, 0)
+        }
+    } else {
+        (true, 0)
+    }
+}
+
+fn process_lines<R: BufRead>(reader: R, pattern: &str) -> Vec<(String, Vec<String>)> {
     reader.lines()
         .filter_map(|line| line.ok())
-        .filter(|line| match_re(line.as_str(), &pattern, &mut matches))
+        .map(|line| (line.clone(), match_re(line.as_str(), &pattern)))
         .collect()
 }
 
@@ -221,7 +278,6 @@ fn main() -> io::Result<()> {
     }
 
     let pattern = env::args().nth(cnt + 1).unwrap();
-    let mut matches: Vec<String> = Vec::new();
     let files: Vec<String> = if !recursive {
         env::args().skip(cnt + 2).collect()
     } else {
@@ -229,24 +285,25 @@ fn main() -> io::Result<()> {
     };
 
     let lines = if files.is_empty() && !recursive {
-        process_lines(BufReader::new(io::stdin().lock()), &pattern, &mut matches)
+        process_lines(BufReader::new(io::stdin().lock()), &pattern)
     } else {
         let mut result = Vec::new();
         for filename in &files {
             match File::open(&filename) {
                 Ok(file) => {
-                    let lines: Vec<String> = process_lines(BufReader::new(file), &pattern, &mut matches);
+                    let lines = process_lines(BufReader::new(file), &pattern);
                     if !lines.is_empty() {
                         result.extend(lines
-                            .iter()
-                            .map(|line|
-                                if files.len() > 1 || recursive {
-                                    format!("{}:{}", filename, line)
+                            .into_iter()
+                            .map(|(l, m)| {
+                                let line = if files.len() > 1 || recursive {
+                                    format!("{}:{}", filename, l)
                                 } else {
-                                    format!("{}", line)
-                                }
-                            )
-                            .collect::<Vec<String>>()
+                                    format!("{}", l)
+                                };
+                                (line, m)
+                            })
+                            .collect::<Vec<(String, Vec<String>)>>()
                         );
                     }
                 }
@@ -258,15 +315,23 @@ fn main() -> io::Result<()> {
         result
     };
 
-    if !lines.is_empty() {
-        if only_matching {
-            matches.iter().for_each(|x| println!("{}", x));
-        } else {
-            lines.iter().for_each(|x| println!("{}", x));
-        }
-        process::exit(0)
-    } else {
-        process::exit(1)
+    match lines.iter().find(|(_, matches)| !matches.is_empty()) {
+        Some(_) => {
+            if only_matching {
+                lines.iter()
+                    .filter(|(_, matches)| !matches.is_empty())
+                    .for_each(|(_, matches)| matches.iter()
+                        .for_each(|substr| println!("{}", substr)));
+            } else {
+                lines
+                    .iter()
+                    .filter(|(_, matches)| !matches.is_empty())
+                    .for_each(|x| println!("{}", x.0));
+            }
+            process::exit(0)
+        },
+        _ =>
+            process::exit(1)
     }
 }
 
@@ -275,215 +340,155 @@ mod tests {
     use super::*;
 
     #[test]
-    fn match_single_literal() {
-        assert_eq!(match_pattern("rust", "u"), true);
-        assert_eq!(match_pattern("rust", "a"), false);
-    }
-
-    #[test]
-    fn match_single_digit() {
-        assert_eq!(match_pattern("rust23p", "\\d"), true);
-        assert_eq!(match_pattern("rust", "\\d"), false);
-    }
-
-    #[test]
-    fn match_single_word_char() {
-        assert_eq!(match_pattern("rust", "\\w"), true);
-        assert_eq!(match_pattern("123", "\\w"), true);
-        assert_eq!(match_pattern("_", "\\w"), true);
-        assert_eq!(match_pattern("[", "\\w"), false);
-    }
-
-    #[test]
-    fn match_single_group() {
-        assert_eq!(match_pattern("rust", "[rs]"), true);
-        assert_eq!(match_pattern("[]", "[rs]"), false);
-        assert_eq!(match_pattern("rust", "[del]"), false);
-    }
-
-    #[test]
-    fn match_single_group_neg() {
-        assert_eq!(match_pattern("rust", "[^rs]"), true);
-        assert_eq!(match_pattern("[]", "[^rs]"), true);
-        assert_eq!(match_pattern("rust", "[^rstu]"), false);
+    fn consume_input() {
+        assert_eq!(consume("abc", "\\w", 0, 0, None), (true, 3, 3));
+        assert_eq!(consume("abc ", "\\w", 0, 0, None), (true, 3, 3));
     }
 
     #[test]
     fn match_literals() {
-        let mut matches = Vec::new();
-        assert_eq!(match_re("rust", "ust", &mut matches), true);
-        assert_eq!(matches, vec!["ust"]);
-        assert_eq!(match_re("rust", "usta", &mut matches), false);
+        assert_eq!(match_block("r", "r", 0), (true, 1));
+        assert_eq!(match_block("rust", "rust", 0), (true, 4));
+        assert_eq!(match_block("rust", "(rust)", 0), (true, 4));
+        assert_eq!(match_block("trusty", "t(rust)y", 0), (true, 6));
+        assert_eq!(match_block("rust", "usta", 0), (false, 0));
+        assert_eq!(match_block("rust", "ruzt", 0), (false, 2));
+        assert_eq!(match_re("trust", "rust"), vec!["rust"]);
     }
 
     #[test]
     fn match_digits() {
-        let mut matches = Vec::new();
-        assert_eq!(match_re("rust123", "\\d\\d\\d", &mut matches), true);
-        assert_eq!(matches, vec!["123"]);
-        assert_eq!(match_re("rust123", "\\d\\d\\d\\d", &mut matches), false);
+        assert_eq!(match_block("123", "\\d\\d\\d", 0), (true, 3));
+        assert_eq!(match_block("123", "\\d\\d", 0), (true, 2));
+        assert_eq!(match_block("123", "\\d\\d\\d\\d", 0), (false, 3));
+        assert_eq!(match_block("a123", "\\d\\d\\d", 0), (false, 0));
+        assert_eq!(match_re("a1234", "\\d\\d"), vec!["12", "34"]);
     }
 
     #[test]
     fn match_word_chars() {
-        let mut matches = Vec::new();
-        assert_eq!(match_re("rust", "\\w\\w", &mut matches), true);
-        assert_eq!(matches, vec!["ru", "st"]);
-        matches = Vec::new();
-        assert_eq!(match_re("123", "\\w\\w\\w", &mut matches), true);
-        assert_eq!(matches, vec!["123"]);
-        assert_eq!(match_re("r", "\\w\\w", &mut matches), false);
+        assert_eq!(match_block("rust", "\\w\\w", 0), (true, 2));
+        assert_eq!(match_block("123", "\\w\\w\\w", 0), (true, 3));
+        assert_eq!(match_block("r", "\\w\\w", 0), (false, 1));
+        assert_eq!(match_re("rust", "\\w\\w"), vec!["ru", "st"]);
+        assert_eq!(match_re("123", "\\w\\w\\w"), vec!["123"]);
     }
 
     #[test]
     fn match_groups() {
-        let mut matches = Vec::new();
-        assert_eq!(match_re("rust", "[rs][at]", &mut matches), true);
-        assert_eq!(matches, vec!["st"]);
-        assert_eq!(match_re("rust", "[rs][ab]j", &mut matches), false);
+        assert_eq!(match_re("rust", "[rs][ut]"), vec!["ru", "st"]);
+        assert_eq!(match_re("1", "[a\\db]"), vec!["1"]);
+        assert_eq!(match_re("rust", "[rs][at]"), vec!["st"]);
+        assert_eq!(match_re("rust", "[rs][ab]j"), vec![] as Vec<String>);
+        assert_eq!(match_re("rust", "[rs][ux]"), vec!["ru"]);
+        assert_eq!(match_re("rust", "[rs][ut]"), vec!["ru", "st"]);
+        assert_eq!(match_re("rust123", "[ust][\\d]\\d"), vec!["t12"]);
     }
 
     #[test]
     fn match_groups_neg() {
-        let mut matches = Vec::new();
-        assert_eq!(match_re("rust", "[^ru][^ab]", &mut matches), true);
-        assert_eq!(matches, vec!["st"]);
-        assert_eq!(match_re("rust", "[^ru][^at]", &mut matches), false);
+        assert_eq!(match_block("r", "[^a]", 0), (true, 1));
+        assert_eq!(match_block("st", "[^ru][^ab]", 0), (true, 2));
+        assert_eq!(match_block("rust", "[^ru][^at]", 0), (false, 0));
+        assert_eq!(match_re("rust", "[^ru][^ab]"), vec!["st"]);
     }
 
     #[test]
     fn match_anchors() {
-        let mut matches = Vec::new();
-        assert_eq!(match_re("rust", "^r[tu]", &mut matches), true);
-        assert_eq!(matches, vec!["ru"]);
-        matches = Vec::new();
-        assert_eq!(match_re("rust", "ust$", &mut matches), true);
-        assert_eq!(matches, vec!["ust"]);
-        matches = Vec::new();
-        assert_eq!(match_re("rust", "^rust$", &mut matches), true);
-        assert_eq!(matches, vec!["rust"]);
-        assert_eq!(match_re("rust", "^trust", &mut matches), false);
-        assert_eq!(match_re("rust", "us$", &mut matches), false);
+        assert_eq!(match_re("rust", "^r[tu]"), vec!["ru"]);
+        assert_eq!(match_re("rust", "ust$"), vec!["ust"]);
+        assert_eq!(match_re("rust", "^rust$"), vec!["rust"]);
+        assert_eq!(match_re("rust", "^trust"), vec![] as Vec<String>);
+        assert_eq!(match_re("rust", "us$"), vec![] as Vec<String>);
     }
 
     #[test]
     fn match_combined() {
-        let mut matches = Vec::new();
-        assert_eq!(match_re("latest rust edition is 2024, it rocks", "editio\\w [big][show] \\d\\d\\d\\d[^op]", &mut matches), true);
-        assert_eq!(matches, vec!["edition is 2024,"]);
-        matches = Vec::new();
-        assert_eq!(match_re("¾®_ediœ1", "\\wedi[^x]\\d", &mut matches), true);
-        assert_eq!(matches, vec!["_ediœ1"]);
-    }
-
-    #[test]
-    fn match_one_or_more() {
-        let mut matches = Vec::new();
-        assert_eq!(match_re("45", "\\d+", &mut matches), true);
-        assert_eq!(matches, vec!["45"]);
-        matches = Vec::new();
-        assert_eq!(match_re("pear", ".+er", &mut matches), false);
-        matches = Vec::new();
-        assert_eq!(match_re("bag", "bag+", &mut matches), true);
-        assert_eq!(matches, vec!["bag"]);
-        matches = Vec::new();
-        assert_eq!(match_re("bag", "ba+g", &mut matches), true);
-        assert_eq!(matches, vec!["bag"]);
-        matches = Vec::new();
-        assert_eq!(match_re("bags", "ba+gs", &mut matches), true);
-        assert_eq!(matches, vec!["bags"]);
-        matches = Vec::new();
-        assert_eq!(match_re("baaag", "ba+g", &mut matches), true);
-        assert_eq!(matches, vec!["baaag"]);
-        matches = Vec::new();
-        assert_eq!(match_re("baaags", "ba+gs", &mut matches), true);
-        assert_eq!(matches, vec!["baaags"]);
-        matches = Vec::new();
-        assert_eq!(match_re("baag", "ba+ag", &mut matches), true);
-        assert_eq!(matches, vec!["baag"]);
-        matches = Vec::new();
-        assert_eq!(match_re("baags", "ba+ags", &mut matches), true);
-        assert_eq!(matches, vec!["baags"]);
-        matches = Vec::new();
-        assert_eq!(match_re("baaag", "ba+ag", &mut matches), true);
-        assert_eq!(matches, vec!["baaag"]);
-        matches = Vec::new();
-        assert_eq!(match_re("baaags", "ba+ags", &mut matches), true);
-        assert_eq!(matches, vec!["baaags"]);
-        matches = Vec::new();
-        assert_eq!(match_re("bag", "ba+ag", &mut matches), false);
+        assert_eq!(match_re("latest rust edition is 2024, it rocks", "editio\\w [big][show] \\d\\d\\d\\d[^op]"), vec!["edition is 2024,"]);
+        assert_eq!(match_re("¾®_ediœ1", "\\wedi[^x]\\d"), vec!["_ediœ1"]);
     }
 
     #[test]
     fn match_zero_or_one() {
-        let mut matches = Vec::new();
-        assert_eq!(match_re("act", "ca?t", &mut matches), true);
-        assert_eq!(matches, vec!["ct"]);
-        matches = Vec::new();
-        assert_eq!(match_re("dog", "dogs?", &mut matches), true);
-        assert_eq!(matches, vec!["dog"]);
-        matches = Vec::new();
-        assert_eq!(match_re("dogs", "dogs?", &mut matches), true);
-        assert_eq!(matches, vec!["dogs"]);
-        matches = Vec::new();
-        assert_eq!(match_re("", "\\d?", &mut matches), true);
-        assert_eq!(matches, vec![""]);
-        matches = Vec::new();
-        assert_eq!(match_re("5", "\\d?", &mut matches), true);
-        assert_eq!(matches, vec!["5"]);
-        matches = Vec::new();
-        assert_eq!(match_re("dogs", "do?gs", &mut matches), true);
-        assert_eq!(matches, vec!["dogs"]);
-        assert_eq!(match_re("dog", "dog?s", &mut matches), false);
+        assert_eq!(match_re("ct", "c(a)?t"), vec!["ct"]);
+        assert_eq!(match_re("ct", "ca?t"), vec!["ct"]);
+        assert_eq!(match_re("dog", "dogs?"), vec!["dog"]);
+        assert_eq!(match_re("dogs", "dogs?"), vec!["dogs"]);
+        assert_eq!(match_re("", "\\d?"), vec![] as Vec<String>);
+        assert_eq!(match_re("5", "\\d?"), vec!["5"]);
+        assert_eq!(match_re("dogs", "do?gs"), vec!["dogs"]);
+        assert_eq!(match_re("dogs", "(bu)?dogs"), vec!["dogs"]);
+        assert_eq!(match_re("dog", "dog?s"), vec![] as Vec<String>);
     }
 
     #[test]
     fn match_wildcard() {
-        let mut matches = Vec::new();
-        assert_eq!(match_re("a", ".", &mut matches), true);
-        assert_eq!(matches, vec!["a"]);
-        matches = Vec::new();
-        assert_eq!(match_re("", ".?", &mut matches), true);
-        assert_eq!(matches, vec![""]);
-        matches = Vec::new();
-        assert_eq!(match_re("cat", "c.t", &mut matches), true);
-        assert_eq!(matches, vec!["cat"]);
-        matches = Vec::new();
-        assert_eq!(match_re("rust", "ru.?[abt]", &mut matches), true);
-        assert_eq!(matches, vec!["rust"]);
-        assert_eq!(match_re("rust", "rus.?t", &mut matches), false);
+        assert_eq!(match_re("a", "."), vec!["a"]);
+        assert_eq!(match_re("", ".?"), vec![] as Vec<String>);
+        assert_eq!(match_re("cat", "c.t"), vec!["cat"]);
+        assert_eq!(match_re("rust", "ru.?[abt]"), vec!["rust"]);
+        assert_eq!(match_re("rust", "rus.?t"), vec![] as Vec<String>);
+        assert_eq!(match_re("abc", "..."), vec!["abc"]);
+    }
+
+    #[test]
+    fn match_one_or_more() {
+        assert_eq!(match_re("a", "(a)+"), vec!["a"]);
+        assert_eq!(match_re("ab", "(ab)+"), vec!["ab"]);
+        assert_eq!(match_re("a", "a+"), vec!["a"]);
+        assert_eq!(match_re("aaa", "a+"), vec!["aaa"]);
+        assert_eq!(match_re("45", "\\d+"), vec!["45"]);
+        assert_eq!(match_re("pear", ".+er"), vec![] as Vec<String>);
+        assert_eq!(match_re("bag", "bag+"), vec!["bag"]);
+        assert_eq!(match_re("bag", "ba+g"), vec!["bag"]);
+        assert_eq!(match_re("bags", "ba+gs"), vec!["bags"]);
+        assert_eq!(match_re("baaag", "ba+g"), vec!["baaag"]);
+        assert_eq!(match_re("baaags", "ba+gs"), vec!["baaags"]);
+        assert_eq!(match_re("baag", "ba+ag"), vec!["baag"]);
+        assert_eq!(match_re("baags", "ba+ags"), vec!["baags"]);
+        assert_eq!(match_re("baaag", "ba+ag"), vec!["baaag"]);
+        assert_eq!(match_re("baaags", "ba+ags"), vec!["baaags"]);
+        assert_eq!(match_re("bag", "ba+ag"), vec![] as Vec<String>);
     }
 
     #[test]
     fn match_or() {
-        let mut matches = Vec::new();
-        assert_eq!(match_re("scala", "(swift|scala)", &mut matches), true);
-        assert_eq!(matches, vec!["scala"]);
-        matches = Vec::new();
-        assert_eq!(match_re("rust", "(rust|scala)", &mut matches), true);
-        assert_eq!(matches, vec!["rust"]);
-        matches = Vec::new();
-        assert_eq!(match_re("rust", "(rus|scala)t", &mut matches), true);
-        assert_eq!(matches, vec!["rust"]);
-        matches = Vec::new();
-        assert_eq!(match_re("rust", "(rus|scala)t?", &mut matches), true);
-        assert_eq!(matches, vec!["rust"]);
-        matches = Vec::new();
-        assert_eq!(match_re("rust", "(r?[au]s|scala)t?", &mut matches), true);
-        assert_eq!(matches, vec!["rust"]);
+        assert_eq!(match_re("scala", "(swift|scala)"), vec!["scala"]);
+        assert_eq!(match_re("rust", "(rust|scala)"), vec!["rust"]);
+        assert_eq!(match_re("rust", "(rus|scala)t"), vec!["rust"]);
+        assert_eq!(match_re("rust", "(rus|scala)t?"), vec!["rust"]);
+        assert_eq!(match_re("rust", "(r?[au]s|scala)t?"), vec!["rust"]);
+        assert_eq!(match_re("php", "(swift|scala)"), vec![] as Vec<String>);
     }
 
     #[test]
     fn match_star() {
-        let mut matches = Vec::new();
-        assert_eq!(match_re("scal", "scala*", &mut matches), true);
-        assert_eq!(matches, vec!["scal"]);
-        matches = Vec::new();
-        assert_eq!(match_re("bg", "ba*g", &mut matches), true);
-        assert_eq!(matches, vec!["bg"]);
-        matches = Vec::new();
-        assert_eq!(match_re("", "a*", &mut matches), true);
-        assert_eq!(matches, vec![""]);
+        assert_eq!(match_re("a", "(a)*"), vec!["a"]);
+        assert_eq!(match_re("aa", "(aa)*"), vec!["aa"]);
+        assert_eq!(match_re("scal", "scala*"), vec!["scal"]);
+        assert_eq!(match_re("bg", "ba*g"), vec!["bg"]);
+        assert_eq!(match_re("", "a*"), vec![] as Vec<String>);
+    }
+
+    #[test]
+    fn match_exactly_n_times() {
+        assert_eq!(match_re("a", "a{2}"), vec![] as Vec<String>);
+        assert_eq!(match_re("aa", "a{2}"), vec!["aa"]);
+        assert_eq!(match_re("aaaaa", "a{3}"), vec!["aaa"]);
+        assert_eq!(match_re("aaaaaaa", "a{3}"), vec!["aaa", "aaa"]);
+        assert_eq!(match_re("aaa", "[ab]{3}"), vec!["aaa"]);
+        assert_eq!(match_re("abcd", "(ab|cd){2}"), vec!["abcd"]);
+        assert_eq!(match_re("abcdef", "(ab|ef|cd){3}"), vec!["abcdef"]);
+        assert_eq!(match_re("aaa", "a{4}"), vec![] as Vec<String>);
+    }
+
+    #[test]
+    fn match_at_least_n_times() {
+        assert_eq!(match_re("aaa", "a{3,}"), vec!["aaa"]);
+        assert_eq!(match_re("aaaaa", "a{3,}"), vec!["aaaaa"]);
+        assert_eq!(match_re("aaa", "[ab]{3,}"), vec!["aaa"]);
+        assert_eq!(match_re("aaaacc", "a{1,}cc"), vec!["aaaacc"]);
+        assert_eq!(match_re("ok", "\\w{3,}"), vec![] as Vec<String>);
     }
 
 }
