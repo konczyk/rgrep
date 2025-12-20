@@ -23,11 +23,13 @@ Arguments:
   [FILE]...  
 
 Options:
-  -o            Print matched substring instead of matched lines
-  -r            Search files recursively
-  -E <PATTERN>  
-  -h, --help    Print help
+      --color <COLOR>  Print matched substring optionally colorized [possible values: always, auto, never]
+  -o                   Print matched substring instead of matched lines
+  -r                   Search files recursively
+  -E <PATTERN>
+  -h, --help           Print help
 ```
+
 Program prints matching lines and returns exit code 0 or returns exit code 1 otherwise
 
 #### Supported patterns:

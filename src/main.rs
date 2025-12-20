@@ -1,20 +1,32 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io;
-use std::io::{BufRead, BufReader};
+use std::io::{stdout, BufRead, BufReader, IsTerminal};
 use std::process;
 use std::fs;
 
+#[derive(Debug, Clone, ValueEnum)]
+#[value(rename_all = "lowercase")]
+enum ArgColor {
+    Always,
+    Auto,
+    Never,
+}
+
 #[derive(Parser, Debug)]
 struct Args {
+
+    /// Print matched substring optionally colorized
+    #[arg(long, value_enum)]
+    color: Option<ArgColor>,
 
     /// Print matched substring instead of matched lines
     #[arg(short = 'o')]
     only_matching: bool,
 
     /// Search files recursively
-    #[arg( short = 'r')]
+    #[arg(short = 'r')]
     recursive: bool,
 
     #[arg(
@@ -376,6 +388,19 @@ fn collect_files(dir: String) -> Vec<String> {
     result
 }
 
+fn highlight_matches(line: &str, matches: &Vec<String>) -> String {
+    let mut result = String::new();
+    let mut rest = line;
+    for m in matches {
+        if let Some((left, right)) = rest.split_once(m) {
+            rest = right;
+            result.push_str(&format!("{left}\x1b[01;31m{m}\x1b[m"));
+        }
+    }
+    result.push_str(rest);
+    result
+}
+
 fn main() -> io::Result<()> {
     let args = Args::parse();
 
@@ -435,7 +460,11 @@ fn main() -> io::Result<()> {
                 lines
                     .iter()
                     .filter(|(_, matches)| !matches.is_empty())
-                    .for_each(|x| println!("{}", x.0));
+                    .for_each(|(line, matches)| match args.color {
+                        Some(ArgColor::Always) => println!("{}", highlight_matches(line, matches)),
+                        Some(ArgColor::Auto) if stdout().is_terminal() => println!("{}", highlight_matches(line, matches)),
+                        _ => println!("{}", line)
+                    });
             }
             process::exit(0)
         },
