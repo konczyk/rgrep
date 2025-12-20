@@ -78,7 +78,7 @@ fn extract_pattern(pattern_block: &str) -> &str {
         let len = pattern_block.chars().skip(1).take_while(|x| x.is_ascii_digit() ).count()+1;
         &pattern_block[..len]
     } else if pattern_block.starts_with("(") && pattern_block.chars().count() > 1 {
-        let len = find_matching_paren(&pattern_block) + 1;
+        let len = find_matching_paren(pattern_block) + 1;
         &pattern_block[..len]
     } else if pattern_block.starts_with("{") && pattern_block.chars().count() > 1 {
         let len = pattern_block.chars().take_while(|x| *x != '}').count()+1;
@@ -110,7 +110,7 @@ fn match_re(input: &str, pattern: &str) -> Vec<String> {
     let mut matches = Vec::new();
     if pattern.starts_with('^') {
         let captured: HashMap<usize, String> = HashMap::new();
-        let (matched,  consumed) = match_block(&input, &pattern[1..], 0, &mut Some(captured));
+        let (matched,  consumed) = match_block(input, &pattern[1..], 0, &mut Some(captured));
         if matched {
             let matched_input = input.chars().take(consumed).collect();
             matches.push(matched_input);
@@ -120,7 +120,7 @@ fn match_re(input: &str, pattern: &str) -> Vec<String> {
         for (i, _) in input.chars().enumerate() {
             let skipped_input = input.chars().skip(i).collect::<String>();
             let captured: HashMap<usize, String> = HashMap::new();
-            let (matched, consumed) = match_block(&skipped_input.as_str(), &pattern, 0, &mut Some(captured));
+            let (matched, consumed) = match_block(&skipped_input.as_str(), pattern, 0, &mut Some(captured));
             if matched {
                 let matched_input = skipped_input.chars().take(consumed).collect();
                 matches.push(matched_input);
@@ -147,7 +147,7 @@ fn match_pattern(input: &str, pattern: &str, captured: &mut Option<HashMap<usize
         let backreference = pattern.trim_matches(|c| c == '\\').parse::<usize>().ok().map(|r| captured.as_ref().map(|x| x.get(&r)).flatten()).flatten();
         (backreference.map(|x| input.starts_with(x)).unwrap_or(false), backreference.map(|x| x.len()).unwrap_or(0))
     } else if pattern.starts_with('(') && pattern.ends_with(')') && (!pattern.contains('|') || pattern[1..pattern.len() - 1].contains("(")) {
-        match_grouping(input, &pattern, &pattern_ahead, captured, true)
+        match_grouping(input, pattern, &pattern_ahead, captured, true)
     } else if pattern.starts_with("[^") && pattern.ends_with(']') {
         match_any_except(input, &pattern[2..pattern.len() - 1], 1)
     } else if pattern.starts_with('[') && pattern.ends_with(']') {
@@ -174,7 +174,7 @@ fn match_grouping(input: &str, pattern: &str, pattern_ahead: &Option<&str>, capt
         let x = consumed;
         for i in 0..x {
             if !match_block(input.chars().skip(x - i).collect::<String>().as_str(), pattern_ahead.unwrap_or(""), 0, &mut cap).0 {
-                (matched, consumed) = match_grouping(input.chars().take(x - i -1).collect::<String>().as_str(), &pattern, &pattern_ahead, &mut cap, false);
+                (matched, consumed) = match_grouping(input.chars().take(x - i -1).collect::<String>().as_str(), pattern, pattern_ahead, &mut cap, false);
             } else {
                 break;
             }
@@ -221,16 +221,16 @@ fn match_any_except(input: &str, patterns: &str, skip: usize) -> (bool, usize) {
 }
 
 fn match_one_or_more(input: &str, pattern: &str, pattern_ahead: &str) -> (bool, usize) {
-    let (matched, consumed) = match_pattern(&input, &pattern, &mut None, None);
+    let (matched, consumed) = match_pattern(input, pattern, &mut None, None);
     if matched {
-        match_n(&input, &pattern, &pattern_ahead, consumed)
+        match_n(input, pattern, pattern_ahead, consumed)
     } else {
         (false, 0)
     }
 }
 
 fn match_exactly(input: &str, pattern: &str, skip: usize, n: usize) -> (bool, usize) {
-    let (matched, consumed, matches) = consume(&input, &pattern, skip, 0, Some(n));
+    let (matched, consumed, matches) = consume(input, pattern, skip, 0, Some(n));
     if matches < n {
         (false, 0)
     } else {
@@ -239,15 +239,15 @@ fn match_exactly(input: &str, pattern: &str, skip: usize, n: usize) -> (bool, us
 }
 
 fn match_at_least(input: &str, pattern: &str, pattern_ahead: &str, skip: usize, n: usize) -> (bool, usize) {
-    let (matched, consumed, matches) = consume(&input, &pattern, skip, 0, None);
+    let (matched, consumed, matches) = consume(input, pattern, skip, 0, None);
     if matches < n {
         (false, 0)
     } else if matched && (pattern_ahead == "" || match_block(input.chars().skip(consumed).collect::<String>().as_str(), pattern_ahead, 0, &mut None).0) {
         (matched, consumed)
     } else {
         let found = (matches-1..1)
-            .map(|x| consume(&input, &pattern, skip, 0, Some(x)))
-            .find(|(_, consumed2, _)| match_block(input.chars().skip(*consumed2).collect::<String>().as_str(), pattern_ahead, 0, &mut None).0);
+            .map(|x| consume(input, pattern, skip, 0, Some(x)))
+            .find(|(_, consumed, _)| match_block(input.chars().skip(*consumed).collect::<String>().as_str(), pattern_ahead, 0, &mut None).0);
         match found {
             Some((matched, consumed, matches)) if matches >= n => (matched, consumed),
             _ => (false, 0),
@@ -256,15 +256,15 @@ fn match_at_least(input: &str, pattern: &str, pattern_ahead: &str, skip: usize, 
 }
 
 fn match_between(input: &str, pattern: &str, pattern_ahead: &str, skip: usize, n: usize, m: usize) -> (bool, usize) {
-    let (matched, consumed, matches) = consume(&input, &pattern, skip, 0, Some(m));
+    let (matched, consumed, matches) = consume(input, pattern, skip, 0, Some(m));
     if matches < n {
         (false, 0)
     } else if matched && matches >= n && matches <= m && (pattern_ahead == "" || match_block(input.chars().skip(consumed).collect::<String>().as_str(), pattern_ahead, 0, &mut None).0) {
         (matched, consumed)
     } else {
         let found = (m..1)
-            .map(|x| consume(&input, &pattern, skip, 0, Some(x)))
-            .find(|(_, consumed2, _)| match_block(input.chars().skip(*consumed2).collect::<String>().as_str(), pattern_ahead, 0, &mut None).0);
+            .map(|x| consume(input, pattern, skip, 0, Some(x)))
+            .find(|(_, consumed, _)| match_block(input.chars().skip(*consumed).collect::<String>().as_str(), pattern_ahead, 0, &mut None).0);
         match found {
             Some((matched, consumed, matches)) if matches >= n && matches <= m => (matched, consumed),
             _ => (false, 0),
@@ -273,7 +273,7 @@ fn match_between(input: &str, pattern: &str, pattern_ahead: &str, skip: usize, n
 }
 
 fn match_n(input: &str, pattern: &str, pattern_ahead: &str, skip: usize) -> (bool, usize) {
-    let (_, consumed, _) = consume(&input, &pattern, skip, 0, None);
+    let (_, consumed, _) = consume(input, pattern, skip, 0, None);
     let (_, consumed_backtracked) = backtrack(input.chars().skip(skip).collect::<String>().as_str(), pattern_ahead, consumed);
     (true, skip + consumed_backtracked)
 }
@@ -300,7 +300,7 @@ fn backtrack(input: &str, pattern: &str, iter: usize) -> (bool, usize) {
     if iter == 0 {
         (true, 0)
     } else {
-        let (matched, _) = match_block(&input.chars().skip(iter).collect::<String>(), &pattern, 0, &mut None);
+        let (matched, _) = match_block(input.chars().skip(iter).collect::<String>().as_str(), pattern, 0, &mut None);
         if matched {
             (true, iter)
         } else {
@@ -325,7 +325,7 @@ fn match_block(input: &str, pattern: &str, skip: usize, mut captured: &mut Optio
         (false, 0)
     } else if pattern.chars().count() > 0 {
         let current_pattern = extract_pattern(pattern);
-        let quantifier = extract_quantifier(&pattern, current_pattern.chars().count());
+        let quantifier = extract_quantifier(pattern, current_pattern.chars().count());
         let quantifier_size = quantifier.0.as_ref().map_or(0, |x| x.len());
 
         let match_input = input.chars().skip(skip).collect::<String>();
@@ -340,7 +340,7 @@ fn match_block(input: &str, pattern: &str, skip: usize, mut captured: &mut Optio
         };
 
         if matched {
-            let (matched_rest, consumed_rest) = match_block(&input, &pattern[current_pattern.len() + quantifier_size ..], skip + consumed, &mut captured);
+            let (matched_rest, consumed_rest) = match_block(input, &pattern[current_pattern.len() + quantifier_size ..], skip + consumed, &mut captured);
             (matched && matched_rest, consumed + consumed_rest)
         } else {
             (false, 0)
@@ -353,7 +353,7 @@ fn match_block(input: &str, pattern: &str, skip: usize, mut captured: &mut Optio
 fn process_lines<R: BufRead>(reader: R, pattern: &str) -> Vec<(String, Vec<String>)> {
     reader.lines()
         .filter_map(|line| line.ok())
-        .map(|line| (line.clone(), match_re(line.as_str(), &pattern)))
+        .map(|line| (line.clone(), match_re(line.as_str(), pattern)))
         .collect()
 }
 
